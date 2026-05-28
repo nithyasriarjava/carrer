@@ -835,8 +835,8 @@ We checked these skills for you automatically. You can toggle additional paramet
             className="flex flex-col items-center justify-center h-[60vh] space-y-4"
           >
             <Lucide.RefreshCw className="h-10 w-10 text-indigo-500 animate-spin" />
-            <p className="text-sm font-semibold text-slate-300 tracking-wider font-mono uppercase">Synchronizing Database Variables...</p>
-            <p className="text-xs text-slate-500">Pulling structural data, roles, and components.</p>
+            <p className="text-sm font-semibold text-slate-300 tracking-wider font-mono uppercase">Loading...</p>
+            <p className="text-xs text-slate-500">Please wait while we set things up.</p>
           </motion.div>
         ) : (
           <AnimatePresence mode="wait">
@@ -1253,8 +1253,8 @@ We checked these skills for you automatically. You can toggle additional paramet
                   <div className="space-y-4 py-12" id="recs_loading_skeleton">
                     <div className="flex flex-col items-center justify-center space-y-3">
                       <Lucide.RefreshCw className="h-10 w-10 text-indigo-500 animate-spin" />
-                      <p className="text-sm font-semibold text-slate-300">Consulting Career Guidance AI Matrix...</p>
-                      <p className="text-xs text-slate-500">Mapping structural coefficients on backend models.</p>
+                      <p className="text-sm font-semibold text-slate-300">Loading Recommendations...</p>
+                      <p className="text-xs text-slate-500">Finding the best matches for your profile.</p>
                     </div>
                   </div>
                 ) : (
@@ -1465,8 +1465,8 @@ We checked these skills for you automatically. You can toggle additional paramet
                   <div className="space-y-4 py-12" id="roadmap_loading_skeleton">
                     <div className="flex flex-col items-center justify-center space-y-3">
                       <Lucide.RefreshCw className="h-10 w-10 text-indigo-500 animate-spin" />
-                      <p className="text-sm font-semibold text-slate-300">Formulating Custom Action Plan Milestones...</p>
-                      <p className="text-xs text-slate-500">Injecting specific tasks and resources based on your stack.</p>
+                      <p className="text-sm font-semibold text-slate-300">Loading Roadmap...</p>
+                      <p className="text-xs text-slate-500">Creating your personalized step-by-step learning timeline.</p>
                     </div>
                   </div>
                 ) : (
