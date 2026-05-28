@@ -79,10 +79,11 @@ export const getRoadmaps = async () => {
 
 export const getLearningResources = async () => {
 
-  const response =
-    await fetch(
-      `${BASE_URL}/learning_resources`
-    );
+  const response = await fetch(
+
+    `${BASE_URL}/learning_resources`
+
+  );
 
   return response.json();
 
@@ -125,4 +126,38 @@ export const getUserProgress = async () => {
 
   return response.json();
 
+};
+
+export const saveUserProgress = async (data) => {
+  const response = await fetch(`${BASE_URL}/user_progress`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(data)
+  });
+  return response.json();
+};
+
+export const checkUserPreferences = async (userId) => {
+  const response = await fetch(`${BASE_URL}/user_preferences/${userId}`);
+  if (response.status === 404) {
+    return { exists: false };
+  }
+  if (!response.ok) {
+    throw new Error("Failed to fetch preferences");
+  }
+  const data = await response.json();
+  return { exists: true, preferences: data };
+};
+
+export const savePreferences = async (data) => {
+  const response = await fetch(`${BASE_URL}/save_preferences`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(data)
+  });
+  return response.json();
 };

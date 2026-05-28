@@ -13,7 +13,10 @@ import {
   getCareerSkills,
   getCareerInterests,
   getUserProgress,
-  getCareerDepartments
+  getCareerDepartments,
+  saveUserProgress,
+  checkUserPreferences,
+  savePreferences
 } from "../services/api";
 
 // Helper f or rendering Lucide icons dynamically
@@ -64,6 +67,9 @@ export default function App() {
   const [userProgressData, setUserProgressData] = useState([]);
   const [careerDepartmentsData, setCareerDepartmentsData] = useState([]);
   const [isDataLoading, setIsDataLoading] = useState(true);
+  const [onboardingLoading, setOnboardingLoading] = useState(false);
+  const [onboardingCompleted, setOnboardingCompleted] = useState(false);
+  const [preferencesChecked, setPreferencesChecked] = useState(false);
 
   // Chatbot State with Multi-Agent Console capabilities
   const [selectedAgent, setSelectedAgent] = useState("coach"); // "coach" | "explainer" | "interviewer" | "strategist"
@@ -134,7 +140,6 @@ export default function App() {
       try {
         const u = JSON.parse(savedSession);
         setCurrentUser(u);
-        setStep("department");
       } catch (e) {
         localStorage.removeItem("career_guide_session");
       }
@@ -143,11 +148,13 @@ export default function App() {
     supabase.auth.getSession().then(({ data }) => {
       if (data.session) {
         const user = data.session.user;
-        setCurrentUser({
+        const sessionUser = {
+          id: user.id,
           email: user.email,
           fullName: user.user_metadata?.full_name || user.email,
-        });
-        setStep("department");
+        };
+        setCurrentUser(sessionUser);
+        localStorage.setItem("career_guide_session", JSON.stringify(sessionUser));
       }
     });
   }, []);
@@ -217,134 +224,99 @@ export default function App() {
   }, [skillsData, searchSkillQuery]);
 
   // Fetch career recommendations using fullstack backend API
-  const handleGenerateRecommendations = async () => {
+  const handleGenerateRecommendations = async (overrideDept = null) => {
+    const activeDept = (typeof overrideDept === 'string' || typeof overrideDept === 'number') ? overrideDept : selectedDept;
+
+    if (!onboardingCompleted && currentUser && (typeof overrideDept !== 'string' && typeof overrideDept !== 'number')) {
+      try {
+        const selectedSkillIds = selectedSkills.map(name => {
+           const s = skillsData.find(x => x.skill_name === name);
+           return s ? s.id : null;
+        }).filter(Boolean);
+        
+        const selectedInterestIds = selectedInterests.map(name => {
+           const i = interestsData.find(x => x.interest_name === name);
+           return i ? i.id : null;
+        }).filter(Boolean);
+
+        await savePreferences({
+           user_id: currentUser.id || currentUser.email,
+           department_id: activeDept,
+           skills: selectedSkillIds,
+           interests: selectedInterestIds
+        });
+        setOnboardingCompleted(true);
+      } catch (error) {
+        console.error("Failed to save preferences:", error);
+      }
+    }
 
     setRecsLoading(true);
-
     setStep("recommendations");
 
     try {
+      const matchedCareerIds = careerDepartmentsData
+        .filter((item) => String(item.department_id) === String(activeDept))
+        .map((item) => String(item.career_id));
 
-      console.log(
-        "selectedDept",
-        selectedDept
+      const filteredCareers = careersData.filter((career) =>
+        matchedCareerIds.includes(String(career.id))
       );
 
-      console.log(
-        "careerDepartmentsData",
-        careerDepartmentsData
-      );
+      const finalRecommendations = filteredCareers.map((career, index) => ({
+        ...career,
+        match: Math.min(95 - (index * 4), 98)
+      }));
 
-      console.log(
-        "careersData",
-        careersData
-      );
-
-
-
-      const matchedCareerIds =
-
-        careerDepartmentsData
-
-          .filter(
-
-            (item) =>
-
-              Number(item.department_id)
-
-              ===
-
-              Number(selectedDept)
-
-          )
-
-          .map(
-
-            (item) =>
-
-              Number(item.career_id)
-
-          );
-
-
-
-      console.log(
-        "matchedCareerIds",
-        matchedCareerIds
-      );
-
-
-
-      const filteredCareers =
-
-        careersData.filter(
-
-          (career) =>
-
-            matchedCareerIds.includes(
-
-              Number(career.id)
-
-            )
-
-        );
-
-
-
-      console.log(
-        "filteredCareers",
-        filteredCareers
-      );
-
-
-
-      const finalRecommendations =
-
-        filteredCareers.map(
-
-          (career, index) => ({
-
-            ...career,
-
-            match:
-
-              Math.min(
-
-                95 - (index * 4),
-
-                98
-
-              )
-
-          })
-
-        );
-
-
-
-      setRecommendations(
-
-        finalRecommendations
-
-      );
-
-    }
-
-    catch (error) {
-
+      setRecommendations(finalRecommendations);
+    } catch (error) {
       console.log(error);
-
       setRecommendations([]);
-
-    }
-
-    finally {
-
+    } finally {
       setRecsLoading(false);
-
     }
-
   };
+
+  // Check User Preferences Flow
+  useEffect(() => {
+    const checkPrefs = async () => {
+      if (currentUser && !isDataLoading && !preferencesChecked) {
+        setOnboardingLoading(true);
+        try {
+          const userId = currentUser.id || currentUser.email;
+          const result = await checkUserPreferences(userId);
+          
+          if (result.exists && result.preferences) {
+            setOnboardingCompleted(true);
+            setSelectedDept(result.preferences.department_id);
+            
+            const restoredSkills = (result.preferences.skills || []).map(skillId => {
+              const s = skillsData.find(x => String(x.id) === String(skillId));
+              return s ? s.skill_name : null;
+            }).filter(Boolean);
+            setSelectedSkills(restoredSkills);
+            
+            const restoredInterests = (result.preferences.interests || []).map(intId => {
+              const i = interestsData.find(x => String(x.id) === String(intId));
+              return i ? i.interest_name : null;
+            }).filter(Boolean);
+            setSelectedInterests(restoredInterests);
+            
+            handleGenerateRecommendations(result.preferences.department_id);
+          } else {
+            setStep("department");
+          }
+        } catch (error) {
+          console.error("Failed to check user preferences:", error);
+          setStep("department");
+        } finally {
+          setPreferencesChecked(true);
+          setOnboardingLoading(false);
+        }
+      }
+    };
+    checkPrefs();
+  }, [currentUser, isDataLoading, preferencesChecked, skillsData, interestsData]);
 
   // Fetch customizable learning roadmap for selected role
   const handleGenerateRoadmap = async (roleObj) => {
@@ -408,34 +380,37 @@ To turn this learning roadmap into a real job offer, your resume and portfolios 
     });
 
     try {
-      const response = await fetch("/api/career/roadmap", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          role: roleName,
-          department: selectedDept,
-          skills: selectedSkills,
-          interests: selectedInterests,
-        }),
-      });
-      const data = await response.json();
-      if (data && data.roadmap) {
-        setRoadmap(data.roadmap);
-      } else {
-        throw new Error("Could not parse dynamic roadmap");
-      }
-    } catch (err) {
-      console.warn("Backend roadmap API offline, using local standard roadmap catalogs.");
-      // Fallback
-      const localRoadmap = roadmapsData.filter((r) => String(r.career_id) === String(roleObj.id));
+      const localRoadmap = roadmapsData.filter(
+        (item) => String(item.career_id) === String(roleObj.id)
+      );
+
       if (localRoadmap.length > 0) {
-        localRoadmap.sort((a, b) => a.step_number - b.step_number);
+        localRoadmap.sort((a, b) => Number(a.step_number) - Number(b.step_number));
         setRoadmap(localRoadmap);
       } else {
         setRoadmap([]);
       }
+    } catch (err) {
+      console.warn("Failed to generate roadmap dynamically.", err);
+      setRoadmap([]);
     } finally {
       setRoadmapLoading(false);
+    }
+  };
+
+  // Dynamic user progress saving
+  const handleMarkCompleted = async (skillId) => {
+    if (!currentUser || !skillId) return;
+    try {
+      const newProgress = {
+        user_id: currentUser.email,
+        skill_id: skillId,
+        status: "completed"
+      };
+      await saveUserProgress(newProgress);
+      setUserProgressData((prev) => [...prev, newProgress]);
+    } catch (error) {
+      console.log("Failed to save progress", error);
     }
   };
 
@@ -469,10 +444,20 @@ To turn this learning roadmap into a real job offer, your resume and portfolios 
   const completedSubtasksCount = useMemo(() => {
     let count = 0;
     Object.keys(completedMilestones).forEach((key) => {
-      if (completedMilestones[key]) count++;
+      if (!key.endsWith('-study') && completedMilestones[key]) count++;
+    });
+    
+    roadmap.forEach(phase => {
+      const phaseTitle = phase.step_title || phase.title;
+      const matchedSkill = skillsData.find(s => s.skill_name?.toLowerCase() === phaseTitle?.toLowerCase());
+      const isCompleted = matchedSkill ? userProgressData.some(p => Number(p.skill_id) === Number(matchedSkill.id) && p.user_id === currentUser?.email && p.status === "completed") : false;
+      
+      if (isCompleted || completedMilestones[`${phaseTitle}-study`]) {
+        count++;
+      }
     });
     return count;
-  }, [completedMilestones]);
+  }, [completedMilestones, roadmap, skillsData, userProgressData, currentUser]);
 
   const roadmapProgressPercent = useMemo(() => {
     if (totalSubtasks === 0) return 0;
@@ -633,6 +618,8 @@ We checked these skills for you automatically. You can toggle additional paramet
     setRecommendations([]);
     setSelectedRole(null);
     setRoadmap([]);
+    setPreferencesChecked(false);
+    setOnboardingCompleted(false);
     setStep("auth");
   };
 
@@ -720,11 +707,8 @@ We checked these skills for you automatically. You can toggle additional paramet
           )
 
         );
-
-        setStep(
-          "department"
-        );
-
+          
+          setPreferencesChecked(false);
       }
 
     }
@@ -828,14 +812,16 @@ We checked these skills for you automatically. You can toggle additional paramet
 
       {/* CORE BODY APP FLOW */}
       <main className="flex-1 max-w-6xl w-full mx-auto p-4 md:p-8" id="core_workflow_viewport">
-        {isDataLoading ? (
+        {isDataLoading || onboardingLoading ? (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             className="flex flex-col items-center justify-center h-[60vh] space-y-4"
           >
             <Lucide.RefreshCw className="h-10 w-10 text-indigo-500 animate-spin" />
-            <p className="text-sm font-semibold text-slate-300 tracking-wider font-mono uppercase">Loading...</p>
+            <p className="text-sm font-semibold text-slate-300 tracking-wider font-mono uppercase">
+              {onboardingLoading ? "Checking user preferences..." : "Loading..."}
+            </p>
             <p className="text-xs text-slate-500">Please wait while we set things up.</p>
           </motion.div>
         ) : (
@@ -1479,6 +1465,10 @@ We checked these skills for you automatically. You can toggle additional paramet
                             const phaseTitle = phase.step_title || phase.title;
                             const phaseDesc = phase.step_description || phase.description;
 
+                            const matchedSkill = skillsData.find(s => s.skill_name?.toLowerCase() === phaseTitle?.toLowerCase());
+                            const matchedResource = matchedSkill ? learningResourcesData.find(r => Number(r.skill_id) === Number(matchedSkill.id)) : null;
+                            const isCompleted = matchedSkill ? userProgressData.some(p => Number(p.skill_id) === Number(matchedSkill.id) && p.user_id === currentUser?.email && p.status === "completed") : false;
+
                             return (
                               <div key={phaseTitle || pIndex} className="relative pl-6 md:pl-8 group mb-4">
                                 {/* Pin Timeline Indicator Dot */}
@@ -1494,7 +1484,14 @@ We checked these skills for you automatically. You can toggle additional paramet
                                 >
                                   <div className="space-y-4">
                                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-900 pb-3">
-                                      <h3 className="text-lg font-extrabold text-white tracking-tight">{phaseTitle}</h3>
+                                      <div className="flex items-center gap-3">
+                                        <h3 className="text-lg font-extrabold text-white tracking-tight">{phaseTitle}</h3>
+                                        {matchedSkill && (
+                                          <span className={`text-[10px] font-mono px-2.5 py-1 rounded border ${isCompleted ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" : "bg-amber-500/10 text-amber-400 border-amber-500/20"}`}>
+                                            {isCompleted ? "Completed" : "Pending"}
+                                          </span>
+                                        )}
+                                      </div>
                                       <span className="text-[10px] font-mono bg-slate-900 text-slate-400 px-2.5 py-1 rounded border border-slate-850">
                                         PHASE {pIndex + 1} ASSET SPEC
                                       </span>
@@ -1503,15 +1500,50 @@ We checked these skills for you automatically. You can toggle additional paramet
                                     <p className="text-sm text-slate-300 leading-relaxed">{phaseDesc}</p>
 
                                     {/* Resources reference details */}
-                                    <div className="bg-slate-900 border border-slate-850 rounded-xl p-4 space-y-2">
-                                      <div className="flex items-center gap-1.5 text-xs text-indigo-400 font-bold uppercase tracking-wider font-sans">
-                                        <Lucide.BookOpen className="h-4 w-4" />
-                                        <span>Curated Study Resources:</span>
+                                    {matchedResource ? (
+                                      <div className="bg-slate-900 border border-slate-850 rounded-xl p-4 space-y-3">
+                                        <div className="flex items-center gap-1.5 text-xs text-indigo-400 font-bold uppercase tracking-wider font-sans">
+                                          <Lucide.BookOpen className="h-4 w-4" />
+                                          <span>Dynamic Learning Resources:</span>
+                                        </div>
+                                        <div className="flex flex-wrap gap-3">
+                                          {matchedResource.youtube_link && (
+                                            <a href={matchedResource.youtube_link} target="_blank" rel="noreferrer" className="bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors">
+                                              <Lucide.Youtube className="h-3.5 w-3.5" />
+                                              YouTube
+                                            </a>
+                                          )}
+                                          {matchedResource.documentation_link && (
+                                            <a href={matchedResource.documentation_link} target="_blank" rel="noreferrer" className="bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 border border-indigo-500/20 px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors">
+                                              <Lucide.FileText className="h-3.5 w-3.5" />
+                                              Documentation
+                                            </a>
+                                          )}
+                                          {matchedResource.practice_link && (
+                                            <a href={matchedResource.practice_link} target="_blank" rel="noreferrer" className="bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/20 px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors">
+                                              <Lucide.Code className="h-3.5 w-3.5" />
+                                              Practice
+                                            </a>
+                                          )}
+                                          {matchedResource.w3schools_link && (
+                                            <a href={matchedResource.w3schools_link} target="_blank" rel="noreferrer" className="bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/20 px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors">
+                                              <Lucide.Globe className="h-3.5 w-3.5" />
+                                              W3Schools
+                                            </a>
+                                          )}
+                                        </div>
                                       </div>
-                                      <p className="text-xs text-slate-400 leading-relaxed">
-                                        {phase.resources || "Official Documentation repositories, roadmap.sh syllabus guidelines, and freeCodeCamp structures."}
-                                      </p>
-                                    </div>
+                                    ) : (
+                                      <div className="bg-slate-900 border border-slate-850 rounded-xl p-4 space-y-2">
+                                        <div className="flex items-center gap-1.5 text-xs text-indigo-400 font-bold uppercase tracking-wider font-sans">
+                                          <Lucide.BookOpen className="h-4 w-4" />
+                                          <span>Curated Study Resources:</span>
+                                        </div>
+                                        <p className="text-xs text-slate-400 leading-relaxed">
+                                          {phase.resources || "Official Documentation repositories, roadmap.sh syllabus guidelines, and freeCodeCamp structures."}
+                                        </p>
+                                      </div>
+                                    )}
 
                                     {/* Custom capstone checklist */}
                                     <div className="space-y-3" id={`projects_list_phase_${pIndex}`}>
@@ -1523,19 +1555,26 @@ We checked these skills for you automatically. You can toggle additional paramet
                                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3" id={`projects_grid_phase_${pIndex}`}>
                                         {/* Core study target check */}
                                         <button
-                                          onClick={() => handleToggleMilestone(`${phaseTitle}-study`)}
-                                          className={`text-left border rounded-xl p-3.5 flex items-start gap-3 transition-colors cursor-pointer ${completedMilestones[`${phaseTitle}-study`]
-                                            ? "bg-slate-900/60 border-indigo-500/20 text-slate-400"
-                                            : "bg-slate-950 border-slate-850 text-slate-200 hover:border-slate-800"
-                                            }`}
+                                          onClick={() => {
+                                            if (matchedSkill && !isCompleted) {
+                                              handleMarkCompleted(matchedSkill.id);
+                                            } else {
+                                              handleToggleMilestone(`${phaseTitle}-study`);
+                                            }
+                                          }}
+                                          disabled={isCompleted}
+                                          className={`text-left border rounded-xl p-3.5 flex items-start gap-3 transition-colors ${
+                                            (isCompleted || completedMilestones[`${phaseTitle}-study`])
+                                              ? "bg-slate-900/60 border-indigo-500/20 text-slate-400 cursor-default"
+                                              : "bg-slate-950 border-slate-850 text-slate-200 hover:border-slate-800 cursor-pointer"
+                                          }`}
                                         >
-                                          <div className={`mt-0.5 h-4 w-4 rounded-full border flex items-center justify-center flex-shrink-0 ${completedMilestones[`${phaseTitle}-study`] ? "bg-indigo-600 border-indigo-500 text-white" : "border-slate-700 bg-slate-900"
-                                            }`}>
-                                            {completedMilestones[`${phaseTitle}-study`] && <Lucide.Check className="h-2.5 w-2.5 stroke-[3]" />}
+                                          <div className={`mt-0.5 h-4 w-4 rounded-full border flex items-center justify-center flex-shrink-0 ${(isCompleted || completedMilestones[`${phaseTitle}-study`]) ? "bg-indigo-600 border-indigo-500 text-white" : "border-slate-700 bg-slate-900"}`}>
+                                            {(isCompleted || completedMilestones[`${phaseTitle}-study`]) && <Lucide.Check className="h-2.5 w-2.5 stroke-[3]" />}
                                           </div>
                                           <div className="text-xs">
-                                            <p className="font-semibold text-white">Review Courseware Core Theory</p>
-                                            <p className="text-[10px] text-slate-500 mt-0.5">Read specified resources and write conceptual summaries.</p>
+                                            <p className="font-semibold text-white">{isCompleted ? "Completed" : "Complete Step"}</p>
+                                            <p className="text-[10px] text-slate-500 mt-0.5">Validate your progress for this skill module.</p>
                                           </div>
                                         </button>
 
