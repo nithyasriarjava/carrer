@@ -52,6 +52,7 @@ export default function AuthPanel({ handleAuthSubmit, handleGoogleLogin }) {
                                     className="w-full bg-slate-900 border border-slate-800 rounded-xl py-3 pl-10 pr-4 text-sm text-slate-100 placeholder:text-slate-600 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all font-sans"
                                 />
                             </div>
+                            
                         </div>
                     )}
 
