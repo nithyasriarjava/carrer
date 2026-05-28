@@ -735,9 +735,8 @@ We checked these skills for you automatically. You can toggle additional paramet
 
           options: {
 
-            redirectTo:
+            redirectTo:"https://nithyasriarjava.github.io/carrer/"
 
-              window.location.origin
 
           }
 
