@@ -228,14 +228,21 @@ export default function App() {
     if (!onboardingCompleted && currentUser && (typeof overrideDept !== 'string' && typeof overrideDept !== 'number')) {
       try {
         const selectedSkillIds = selectedSkills.map(name => {
-           const s = skillsData.find(x => x.skill_name === name);
-           return s ? s.id : null;
+          const s = skillsData.find(x => x.skill_name === name);
+          return s ? s.id : null;
         }).filter(Boolean);
-        
+
         const selectedInterestIds = selectedInterests.map(name => {
-           const i = interestsData.find(x => x.interest_name === name);
-           return i ? i.id : null;
+          const i = interestsData.find(x => x.interest_name === name);
+          return i ? i.id : null;
         }).filter(Boolean);
+
+        console.log({
+           user_id: currentUser.id || currentUser.email,
+           department_id: activeDept,
+           skills: selectedSkillIds,
+           interests: selectedInterestIds
+        });
 
         await savePreferences({
            user_id: currentUser.id || currentUser.email,
@@ -243,6 +250,8 @@ export default function App() {
            skills: selectedSkillIds,
            interests: selectedInterestIds
         });
+
+
         setOnboardingCompleted(true);
       } catch (error) {
         console.error("Failed to save preferences:", error);
@@ -283,24 +292,24 @@ export default function App() {
         try {
           const userId = currentUser.id || currentUser.email;
           const result = await checkUserPreferences(userId);
-          
+
           if (result.exists && result.preferences) {
             setOnboardingCompleted(true);
             setSelectedDept(result.preferences.department_id);
-            
+
             const restoredSkills = (result.preferences.skills || []).map(skillId => {
               const s = skillsData.find(x => String(x.id) === String(skillId));
               return s ? s.skill_name : null;
             }).filter(Boolean);
             setSelectedSkills(restoredSkills);
-            
+
             const restoredInterests = (result.preferences.interests || []).map(intId => {
               const i = interestsData.find(x => String(x.id) === String(intId));
               return i ? i.interest_name : null;
             }).filter(Boolean);
             setSelectedInterests(restoredInterests);
-            
-            handleGenerateRecommendations(result.preferences.department_id);
+
+            await handleGenerateRecommendations(result.preferences.department_id);
           } else {
             setStep("department");
           }
@@ -315,6 +324,7 @@ export default function App() {
     };
     checkPrefs();
   }, [currentUser, isDataLoading, preferencesChecked, skillsData, interestsData]);
+
 
   // Fetch customizable learning roadmap for selected role
   const handleGenerateRoadmap = async (roleObj) => {
@@ -444,12 +454,12 @@ To turn this learning roadmap into a real job offer, your resume and portfolios 
     Object.keys(completedMilestones).forEach((key) => {
       if (!key.endsWith('-study') && completedMilestones[key]) count++;
     });
-    
+
     roadmap.forEach(phase => {
       const phaseTitle = phase.step_title || phase.title;
       const matchedSkill = skillsData.find(s => s.skill_name?.toLowerCase() === phaseTitle?.toLowerCase());
       const isCompleted = matchedSkill ? userProgressData.some(p => Number(p.skill_id) === Number(matchedSkill.id) && p.user_id === currentUser?.email && p.status === "completed") : false;
-      
+
       if (isCompleted || completedMilestones[`${phaseTitle}-study`]) {
         count++;
       }
@@ -480,7 +490,7 @@ To turn this learning roadmap into a real job offer, your resume and portfolios 
     setChatLoading(true);
 
     try {
-      const response = await fetch("/api/career/chat", {
+      const response = await fetch("https://career-ai-dlgv.onrender.com/api/career/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -682,6 +692,8 @@ We checked these skills for you automatically. You can toggle additional paramet
 
         const sessionUser = {
 
+          id: data.user.id,
+
           email: data.user.email,
 
           fullName:
@@ -705,8 +717,8 @@ We checked these skills for you automatically. You can toggle additional paramet
           )
 
         );
-          
-          setPreferencesChecked(false);
+
+        setPreferencesChecked(false);
       }
 
     }
@@ -735,7 +747,7 @@ We checked these skills for you automatically. You can toggle additional paramet
 
           options: {
 
-            redirectTo:"https://nithyasriarjava.github.io/carrer/"
+            redirectTo: "https://nithyasriarjava.github.io/carrer/"
 
 
           }
@@ -1449,11 +1461,10 @@ We checked these skills for you automatically. You can toggle additional paramet
                                             }
                                           }}
                                           disabled={isCompleted}
-                                          className={`text-left border rounded-xl p-3.5 flex items-start gap-3 transition-colors ${
-                                            (isCompleted || completedMilestones[`${phaseTitle}-study`])
+                                          className={`text-left border rounded-xl p-3.5 flex items-start gap-3 transition-colors ${(isCompleted || completedMilestones[`${phaseTitle}-study`])
                                               ? "bg-slate-900/60 border-indigo-500/20 text-slate-400 cursor-default"
                                               : "bg-slate-950 border-slate-850 text-slate-200 hover:border-slate-800 cursor-pointer"
-                                          }`}
+                                            }`}
                                         >
                                           <div className={`mt-0.5 h-4 w-4 rounded-full border flex items-center justify-center flex-shrink-0 ${(isCompleted || completedMilestones[`${phaseTitle}-study`]) ? "bg-indigo-600 border-indigo-500 text-white" : "border-slate-700 bg-slate-900"}`}>
                                             {(isCompleted || completedMilestones[`${phaseTitle}-study`]) && <Lucide.Check className="h-2.5 w-2.5 stroke-[3]" />}
