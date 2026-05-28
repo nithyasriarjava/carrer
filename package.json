@@ -10,7 +10,8 @@
   "server": "node server.js",
   "preview": "vite preview",
   "predeploy": "npm run build",
-  "deploy": "gh-pages -d dist"
+  "deploy": "gh-pages -d dist",
+  "depoly": "npm run deploy"
  },
  "dependencies": {
   "@google/genai": "^2.4.0",

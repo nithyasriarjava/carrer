@@ -35,9 +35,6 @@ export const getSkills = async () => {
 
 };
 
-console.log("skills",getSkills())
-
-
 export const getInterests = async () => {
 
   const response =
