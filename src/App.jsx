@@ -71,6 +71,7 @@ export default function App() {
   const [onboardingLoading, setOnboardingLoading] = useState(false);
   const [onboardingCompleted, setOnboardingCompleted] = useState(false);
   const [preferencesChecked, setPreferencesChecked] = useState(false);
+  const [isAuthChecking, setIsAuthChecking] = useState(true);
 
   // Chatbot State with Multi-Agent Console capabilities
   const [selectedAgent, setSelectedAgent] = useState("coach"); // "coach" | "explainer" | "interviewer" | "strategist"
@@ -131,20 +132,10 @@ export default function App() {
 
   }, []);
 
-  // Load user session from local storage on startup
+  // Load user session securely from Supabase on startup
   useEffect(() => {
-    const savedSession = localStorage.getItem("career_guide_session");
-    if (savedSession) {
-      try {
-        const u = JSON.parse(savedSession);
-        setCurrentUser(u);
-      } catch (e) {
-        localStorage.removeItem("career_guide_session");
-      }
-    }
-
     supabase.auth.getSession().then(({ data }) => {
-      if (data.session) {
+      if (data?.session) {
         const user = data.session.user;
         const sessionUser = {
           id: user.id,
@@ -153,8 +144,32 @@ export default function App() {
         };
         setCurrentUser(sessionUser);
         localStorage.setItem("career_guide_session", JSON.stringify(sessionUser));
+      } else {
+        localStorage.removeItem("career_guide_session");
+        setCurrentUser(null);
+      }
+      setIsAuthChecking(false);
+    });
+
+    // Listen for auth changes (like Google OAuth return or token expiration)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session) {
+        const user = session.user;
+        const sessionUser = {
+          id: user.id,
+          email: user.email,
+          fullName: user.user_metadata?.full_name || user.email,
+        };
+        setCurrentUser(sessionUser);
+        localStorage.setItem("career_guide_session", JSON.stringify(sessionUser));
+      } else {
+        setCurrentUser(null);
+        localStorage.removeItem("career_guide_session");
+        setStep("auth");
       }
     });
+
+    return () => subscription.unsubscribe();
   }, []);
 
   // Sync checklist progress of milestones
@@ -223,9 +238,18 @@ export default function App() {
 
   // Fetch career recommendations using fullstack backend API
   const handleGenerateRecommendations = async (overrideDept = null) => {
-    const activeDept = (typeof overrideDept === 'string' || typeof overrideDept === 'number') ? overrideDept : selectedDept;
+    // React onClick passes an event object. We must safely ignore it.
+    const isEvent = overrideDept && typeof overrideDept === "object" && "preventDefault" in overrideDept;
+    const actualOverrideDept = isEvent ? null : overrideDept;
 
-    if (!onboardingCompleted && currentUser && (typeof overrideDept !== 'string' && typeof overrideDept !== 'number')) {
+    const activeDept =
+      actualOverrideDept !== null &&
+      actualOverrideDept !== undefined &&
+      actualOverrideDept !== ""
+        ? actualOverrideDept
+        : selectedDept;
+
+    if (!onboardingCompleted && currentUser && actualOverrideDept === null) {
       try {
         const selectedSkillIds = selectedSkills.map(name => {
           const s = skillsData.find(x => x.skill_name === name);
@@ -237,18 +261,24 @@ export default function App() {
           return i ? i.id : null;
         }).filter(Boolean);
 
+        if (!activeDept) {
+           console.error("Department ID missing");
+           setStep("department");
+           return;
+        }
+
         console.log({
-           user_id: currentUser.id || currentUser.email,
-           department_id: activeDept,
-           skills: selectedSkillIds,
-           interests: selectedInterestIds
+           user_id: currentUser.id,
+           department_id: Number(activeDept),
+           skills: selectedSkillIds.map(Number),
+           interests: selectedInterestIds.map(Number)
         });
 
         await savePreferences({
-           user_id: currentUser.id || currentUser.email,
-           department_id: activeDept,
-           skills: selectedSkillIds,
-           interests: selectedInterestIds
+           user_id: currentUser.id,
+           department_id: Number(activeDept),
+           skills: selectedSkillIds.map(Number),
+           interests: selectedInterestIds.map(Number)
         });
 
 
@@ -256,6 +286,12 @@ export default function App() {
       } catch (error) {
         console.error("Failed to save preferences:", error);
       }
+    }
+
+    if (!activeDept) {
+      console.error("Cannot generate recommendations: Department ID is missing.");
+      setStep("department");
+      return;
     }
 
     setRecsLoading(true);
@@ -293,7 +329,7 @@ export default function App() {
           const userId = currentUser.id || currentUser.email;
           const result = await checkUserPreferences(userId);
 
-          if (result.exists && result.preferences) {
+          if (result.exists && result.preferences && result.preferences.department_id) {
             setOnboardingCompleted(true);
             setSelectedDept(result.preferences.department_id);
 
@@ -617,7 +653,12 @@ We checked these skills for you automatically. You can toggle additional paramet
   };
 
   // Clear credentials & log out
-  const handleLogOut = () => {
+  const handleLogOut = async () => {
+    try {
+      await supabase.auth.signOut();
+    } catch (err) {
+      console.error("Signout error:", err);
+    }
     localStorage.removeItem("career_guide_session");
     setCurrentUser(null);
     setSelectedDept("");
@@ -815,7 +856,7 @@ We checked these skills for you automatically. You can toggle additional paramet
 
       {/* CORE BODY APP FLOW */}
       <main className="flex-1 max-w-6xl w-full mx-auto p-4 md:p-8" id="core_workflow_viewport">
-        {isDataLoading || onboardingLoading ? (
+        {isDataLoading || onboardingLoading || isAuthChecking || (currentUser && !preferencesChecked) ? (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -823,7 +864,7 @@ We checked these skills for you automatically. You can toggle additional paramet
           >
             <Lucide.RefreshCw className="h-10 w-10 text-indigo-500 animate-spin" />
             <p className="text-sm font-semibold text-slate-300 tracking-wider font-mono uppercase">
-              {onboardingLoading ? "Checking user preferences..." : "Loading..."}
+              {onboardingLoading || (currentUser && !preferencesChecked) ? "Checking user preferences..." : "Loading Workspace..."}
             </p>
             <p className="text-xs text-slate-500">Please wait while we set things up.</p>
           </motion.div>
